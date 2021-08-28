@@ -1,0 +1,20 @@
+#include "lcd.h"
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+#include <util/delay.h>
+
+int main()
+{
+	TWBR = 0x0B;
+	
+	struct LCD lcd;
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { LCD_Create(&lcd, 0x27); }
+	LCD_Init(&lcd);
+	LCD_Print(&lcd, "XD", 2);
+	while (1)
+	{
+		
+	}
+}
