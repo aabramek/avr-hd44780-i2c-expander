@@ -3,17 +3,7 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-void LCD_BacklightOn(struct LCD* lcd)
-{
-	lcd->backlight = 0x8;
-}
-
-void LCD_BacklightOff(struct LCD* lcd)
-{
-	lcd->backlight = 0;
-}
-
-void LCD_SendByte(unsigned char byte, unsigned char address)
+void I2C_SendByte(uint8_t byte, uint8_t address)
 {
 	TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN); // start signal
 	while(!(TWCR & (1 << TWINT)));
@@ -29,22 +19,20 @@ void LCD_SendByte(unsigned char byte, unsigned char address)
 	TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN); // stop signal
 }
 
-void LCD_SendInstruction(struct LCD* lcd, unsigned char instruction)
+void LCD_SendInstruction(struct LCD* lcd, uint8_t instruction)
 {
 	// shift bytes so they will appear on P7 - P4 outputs of PCF8574 instead of P3 - P0
 	// RegisterSelect and Enable bits stay LOW, Backlight is set/unset according to settings
-	unsigned char instructionHigh = (instruction & 0xF0) | lcd->backlight;
-	unsigned char instructionLow = ((instruction & 0x0F) << 4) | lcd->backlight;
+	uint8_t instructionHigh = (instruction & 0xF0) | lcd->backlight;
+	uint8_t instructionLow = ((instruction & 0x0F) << 4) | lcd->backlight;
 	
 	// First send high part of instruction
-	LCD_SendByte(instructionHigh, lcd->address_rw);
-	LCD_SendByte(instructionHigh | 0x04, lcd->address_rw);
-	LCD_SendByte(instructionHigh, lcd->address_rw); // possible to be removed in future releases
+	I2C_SendByte(instructionHigh | 0x04, lcd->address);
+	I2C_SendByte(instructionHigh, lcd->address);
 	
 	// Then send lower one
-	LCD_SendByte(instructionLow, lcd->address_rw);
-	LCD_SendByte(instructionLow | 0x04, lcd->address_rw);
-	LCD_SendByte(instructionLow, lcd->address_rw); // possible to be removed in future releases
+	I2C_SendByte(instructionLow | 0x04, lcd->address);
+	I2C_SendByte(instructionLow, lcd->address);
 }
 
 void LCD_SendLetter(struct LCD* lcd, char letter)
@@ -54,72 +42,62 @@ void LCD_SendLetter(struct LCD* lcd, char letter)
 	char letterHigh = (letter & 0xF0) | lcd->backlight | 0x1;
 	char letterLow = ((letter & 0x0F) << 4) | lcd->backlight | 0x1;
 	
-	LCD_SendByte(letterHigh, lcd->address_rw);
-	LCD_SendByte(letterHigh | 0x04, lcd->address_rw);
-	LCD_SendByte(letterHigh, lcd->address_rw); // possible to be removed in future releases
+	I2C_SendByte(letterHigh | 0x04, lcd->address);
+	I2C_SendByte(letterHigh, lcd->address);
 	
 	// Then send lower one
-	LCD_SendByte(letterLow, lcd->address_rw);
-	LCD_SendByte(letterLow | 0x04, lcd->address_rw);
-	LCD_SendByte(letterLow, lcd->address_rw); // possible to be removed in future releases
+	I2C_SendByte(letterLow | 0x04, lcd->address);
+	I2C_SendByte(letterLow, lcd->address);
 }
 
-void LCD_Create(struct LCD* lcd, unsigned char address)
+void LCD_Create(struct LCD* lcd, uint8_t address, uint8_t backlight)
 {
-	lcd->address_rw = address << 1;
-	lcd->backlight = 0x8;
-	lcd->stringLength = 0;
+	lcd->address = address << 1;
+	lcd->backlight = backlight << 3;
 }
 
-void LCD_Init(struct LCD* lcd)
-{
-	// Clear all PCF8574 outputs
-	LCD_SendInstruction(lcd, 0x00); 
-	
+void LCD_Init(struct LCD* lcd, uint8_t display_params)
+{	
 	// Start initialization sequence
-	LCD_SendByte(0x30, lcd->address_rw);
-	LCD_SendByte(0x34, lcd->address_rw);
-	LCD_SendByte(0x30, lcd->address_rw);
+	I2C_SendByte(0x34, lcd->address);
+	I2C_SendByte(0x30, lcd->address);
 	
-	_delay_ms(5); // 4.1ms required
+	_delay_ms(4); // 4.1ms required
 	
-	LCD_SendByte(0x30, lcd->address_rw);
-	LCD_SendByte(0x34, lcd->address_rw);
-	LCD_SendByte(0x30, lcd->address_rw);
+	I2C_SendByte(0x34, lcd->address);
+	I2C_SendByte(0x30, lcd->address);
 	
-	_delay_us(150); // 100us required
-	
-	LCD_SendByte(0x30, lcd->address_rw);
-	LCD_SendByte(0x34, lcd->address_rw);
-	LCD_SendByte(0x30, lcd->address_rw);
-	_delay_us(60); // 37us required
+	I2C_SendByte(0x34, lcd->address);
+	I2C_SendByte(0x30, lcd->address);
 	
 	// ====================
 	
-	LCD_SendByte(0x20, lcd->address_rw);
-	LCD_SendByte(0x24, lcd->address_rw);
-	LCD_SendByte(0x20, lcd->address_rw);
-	_delay_us(60); // 37us required
+	I2C_SendByte(0x24, lcd->address);
+	I2C_SendByte(0x20, lcd->address);
 	
 	// Function Set
-	LCD_SendInstruction(lcd, 0x28);
-	_delay_us(60); // 37us required
+	LCD_SendInstruction(lcd, LCD_CMD_FUNCTION_SET | LCD_PARAM_FONT5x8 | LCD_PARAM_TWO_LINE | LCD_PARAM_4BIT);
 	
-	// Display on, Cursor on, Blinking on
-	LCD_SendInstruction(lcd, 0x0F);
-	_delay_us(60); // 37us required
+	// Display on/off
+	LCD_SendInstruction(lcd, LCD_CMD_DISPLAY_ONOFF | display_params);
 	
-	// Display clear + backlight
-	LCD_SendInstruction(lcd, 0x01);
-	_delay_us(60); // 37us required
+	// Display clear
+	LCD_SendInstruction(lcd, LCD_CMD_CLEAR);
 }
 
-unsigned int LCD_Print(struct LCD* lcd, const char* string, unsigned int length)
+void LCD_Print(struct LCD* lcd, const char* string, uint8_t length)
 {
-	unsigned int charsWritten = 0;
 	for (unsigned int i = 0; i < length; ++i)
 	{
 		LCD_SendLetter(lcd, string[i]);
 	}
-	return charsWritten;
+}
+
+void LCD_CustomCharacter(struct LCD* lcd, uint8_t code, uint8_t pattern[8])
+{
+	LCD_SendInstruction(lcd, LCD_CMD_CGRAM_SET | code << 3);
+	for (uint8_t i = 0; i < 8; ++i)
+	{
+		LCD_SendLetter(lcd, pattern[i]);
+	}
 }

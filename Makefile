@@ -1,18 +1,28 @@
 CC=avr-gcc.exe
-CFLAGS=-Wall -O2 -mmcu=atmega8a -DF_CPU=1000000UL -I./include
-OUTPUT=bin/program.hex
+CSTD=c99
+OPTIMIZATION=-O2
+WARN=-Wall
 
-vpath %.c src
-vpath %.h include
-vpath %.o obj
+FCPU=1000000
+MMCU=atmega32a
 
-PHONY: upload
+CFLAGS=$(WARN) $(OPTIMIZATION) -mmcu=$(MMCU) -DF_CPU=$(FCPU) -Iinclude -std=$(CSTD)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $^ -o obj/$@
+LIB=bin/lcd.a
 
-compile: main.o lcd.o
-	$(CC) $(CFLAGS) $^ -o $(OUTPUT)
+CFILES=$(subst src/,,$(wildcard src/*.c))
+OBJFILES=$(patsubst %.c,%.o,$(CFILES))
 
-upload: $(OUTPUT)
-	avrdude.exe -p m8 -c usbasp -U flash:w:$(OUTPUT)
+
+.PHONY: all
+all: $(LIB)
+
+$(LIB): obj/$(OBJFILES)
+	mkdir bin; avr-ar rs $@ $^
+
+obj/%.o: src/%.c
+	mkdir obj; $(CC) $(CFLAGS) -c -o $@ $^
+	
+.PHONY: clean
+clean:
+	rm -rf obj bin

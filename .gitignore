@@ -1,0 +1,4 @@
+bin/*
+obj/*
+examples/*/*.elf
+examples/*/*.srec
